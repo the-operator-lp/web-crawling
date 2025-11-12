@@ -12,11 +12,36 @@ except Exception:
     from config import DEFAULT_MISSING_INFO, REQUEST_DELAY
 
 def initialize_json_files():
-    """Creates or clears the output JSON files."""
-    for filename in ['novels.json', 'chapters.json', 'genres.json']:
-        with open(filename, 'w', encoding='utf-8') as f:
+    """Creates or ensures the `data/` directory exists and seeds `data/genres.json` and `data/state.json`.
+
+    This avoids creating top-level JSON files and prepares the folder structure for
+    per-novel storage (data/<novel-slug>/metadata.json and chapter text files).
+    If files already exist we don't overwrite them so partial crawls are preserved.
+    """
+    import os
+    os.makedirs('data', exist_ok=True)
+    genres_path = os.path.join('data', 'genres.json')
+    if not os.path.exists(genres_path):
+        with open(genres_path, 'w', encoding='utf-8') as f:
             json.dump([], f, ensure_ascii=False, indent=2)
-    print("Initialized JSON files.")
+
+    # Initialize state file if missing
+    state_path = os.path.join('data', 'state.json')
+    if not os.path.exists(state_path):
+        initial_state = {
+            "current_page": 1,
+            "stories_crawled_count": 0,
+            "processed_novels": {}
+        }
+        with open(state_path, 'w', encoding='utf-8') as f:
+            json.dump(initial_state, f, ensure_ascii=False, indent=2)
+
+    # Use logging instead of print where possible (main config will set handlers)
+    try:
+        import logging
+        logging.getLogger(__name__).info(f"Initialized data directory and ensured {genres_path} and state.json exist.")
+    except Exception:
+        print(f"Initialized data directory and ensured {genres_path} and state.json exist.")
 
 def create_slug_from_text(text):
     if not text:
@@ -140,3 +165,28 @@ def generate_random_genre_dates():
     updated_dt = max(updated_dt, created_dt)
 
     return format_datetime_for_json(created_dt), format_datetime_for_json(updated_dt)
+
+
+def load_state(state_path='data/state.json'):
+    """Load crawling state from disk. Returns a dict with keys current_page, stories_crawled_count, processed_novels."""
+    try:
+        with open(state_path, 'r', encoding='utf-8') as f:
+            return json.load(f)
+    except Exception:
+        return {"current_page": 1, "stories_crawled_count": 0, "processed_novels": {}}
+
+
+def save_state(state, state_path='data/state.json'):
+    """Persist crawling state to disk atomically."""
+    import os, tempfile
+    os.makedirs(os.path.dirname(state_path) or '.', exist_ok=True)
+    fd, tmp = tempfile.mkstemp(dir=os.path.dirname(state_path) or '.')
+    try:
+        with os.fdopen(fd, 'w', encoding='utf-8') as tf:
+            json.dump(state, tf, ensure_ascii=False, indent=2)
+        os.replace(tmp, state_path)
+    except Exception:
+        try:
+            os.remove(tmp)
+        except Exception:
+            pass

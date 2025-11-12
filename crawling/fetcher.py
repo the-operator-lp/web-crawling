@@ -3,17 +3,10 @@ from bs4 import BeautifulSoup
 import time
 import re
 from urllib.parse import urljoin
-
-try:
-    # Prefer package import when used as module
-    from .config import BASE_URL, REQUEST_DELAY, DEFAULT_MISSING_INFO
-    from .ids import generate_novel_id, generate_chapter_id
-    from .utils import create_slug_from_text, generate_random_novel_numeric_fields, generate_random_chapter_fields
-except Exception:
-    # Fallback if modules are imported as scripts
-    from config import BASE_URL, REQUEST_DELAY, DEFAULT_MISSING_INFO
-    from ids import generate_novel_id, generate_chapter_id
-    from utils import create_slug_from_text, generate_random_novel_numeric_fields, generate_random_chapter_fields
+import logging
+from config import BASE_URL, REQUEST_DELAY, DEFAULT_MISSING_INFO
+from ids import generate_novel_id, generate_chapter_id
+from utils import create_slug_from_text, generate_random_novel_numeric_fields, generate_random_chapter_fields
 
 def fetch_page(url):
     """Fetches and parses a web page."""
@@ -26,7 +19,7 @@ def fetch_page(url):
         time.sleep(REQUEST_DELAY)
         return BeautifulSoup(response.content, 'html.parser')
     except requests.exceptions.RequestException as e:
-        print(f"Error fetching {url}: {e}")
+        logging.getLogger(__name__).warning("Error fetching %s: %s", url, e)
         return None
 
 def get_novel_urls_from_list_page(page_url):
@@ -44,11 +37,11 @@ def get_novel_urls_from_list_page(page_url):
         href = link_tag.get('href')
         if href:
             novel_links.append(urljoin(BASE_URL, href))
-    print(f"Found {len(novel_links)} novels on {page_url}")
+    logging.getLogger(__name__).info("Found %d novels on %s", len(novel_links), page_url)
     return novel_links
 
 def scrape_novel_details(novel_url):
-    print(f"Scraping novel details from: {novel_url}")
+    logging.getLogger(__name__).info("Scraping novel details from: %s", novel_url)
     soup = fetch_page(novel_url)
     if not soup:
         return None
@@ -119,10 +112,10 @@ def scrape_novel_details(novel_url):
     return novel_data
 
 def scrape_chapter_details(chapter_url, novel_id_str, chapter_number_expected):
-    print(f"  Attempting to scrape chapter: {chapter_url}")
+    logging.getLogger(__name__).info("  Attempting to scrape chapter: %s", chapter_url)
     soup = fetch_page(chapter_url)
     if not soup:
-        print(f"  Chapter not found or error fetching: {chapter_url}")
+        logging.getLogger(__name__).warning("  Chapter not found or error fetching: %s", chapter_url)
         return None
 
     chapter_data = {}
@@ -157,9 +150,9 @@ def scrape_chapter_details(chapter_url, novel_id_str, chapter_number_expected):
         
         chapter_data['content'] = content_div.decode_contents()
         if not raw_content_text.strip() and not chapter_data['content'].strip():
-             print(f"  Chapter content is empty for: {chapter_url}")
+            logging.getLogger(__name__).warning("  Chapter content is empty for: %s", chapter_url)
     else:
-        print(f"  Chapter content div not found for: {chapter_url}. Assuming chapter does not exist.")
+        logging.getLogger(__name__).warning("  Chapter content div not found for: %s. Assuming chapter does not exist.", chapter_url)
         return None
 
     word_count = len(raw_content_text.split())
@@ -171,5 +164,5 @@ def scrape_chapter_details(chapter_url, novel_id_str, chapter_number_expected):
     chapter_data.update(generate_random_chapter_fields())
     chapter_data['wordCount'] = word_count
 
-    print(f"    Successfully scraped Chapter {chapter_data['chapterNumber']}: {chapter_data['title']}")
+    logging.getLogger(__name__).info("    Successfully scraped Chapter %s: %s", chapter_data['chapterNumber'], chapter_data['title'])
     return chapter_data
